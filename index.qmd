@@ -1,0 +1,38 @@
+---
+title: "Yongqiang Zhou"
+---
+
+## Introduction
+My name is _Yongqiang Zhou_. I’m currently pursuing my Master’s in **Quantitative Methods and Modeling**, with a strong foundation in data analytics and computer science. I specialize in building predictive models and developing data-driven solutions that don’t just explain trends but optimize outcomes.\
+
+## Linkedin
+<https://www.linkedin.com/in/yongqiang-zhou-460018335/>\
+
+
+```{r}
+#| include: false
+1+1
+```
+--------------
+Last Updated: `r format(Sys.time(), "%A %m %d, %Y at %H:%M%p")`
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+if(!require("leaflet")){
+    options(repos=c(CRAN="https://cloud.r-project.org"))
+    install.packages("leaflet")
+    stopifnot(require("leaflet"))
+}
+
+baruch_longitude <- -73.98333
+baruch_latitude  <- +40.75028
+
+leaflet() |>
+  addTiles() |>
+  setView(baruch_longitude, baruch_latitude, zoom=17) |>
+  addPopups(baruch_longitude, baruch_latitude, 
+            "I am a Master's student at <b>Baruch College</b>!")
+```
