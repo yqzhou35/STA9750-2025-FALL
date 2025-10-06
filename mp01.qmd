@@ -119,7 +119,7 @@ ggplot(data = TOP_10_SHOWS, aes(x = reorder(`Show Title`, -`Total Weeks`), y = `
     plot.title = element_text(hjust = 0.5)
   )
 ```
-Netflix’s original content continues to dominate global viewership, with Squid Game and Stranger Things leading the Top 10 charts. Our data analysis reveals strong international appeal, with 80% of Top 10 titles resonating across diverse markets like the US, India, and South Korea, showcasing Netflix’s ability to deliver high-quality, mass-appeal content.
+Netflix’s original content continues to dominate global viewership, with Squid Game leading the Top 10 charts. Our data analysis reveals strong international appeal, with 80% of Top 10 titles resonating across diverse markets like the US, India, and South Korea, showcasing Netflix’s ability to deliver high-quality, mass-appeal content.
 
 # Exploratory Questions
 ### 1. How many different countries does Netflix operate in?
@@ -235,6 +235,7 @@ RED_NOTICE_2021 <-  GLOBAL_TOP_10 |>
   filter(`Show Title` == "Red Notice", year(Week) == 2021) |>
   summarise(`Total Hours` = sum(`Weekly Hours Viewed`)) |>
   mutate(Views = round(`Total Hours`/ (118 / 60)))
+  
 VIEWS <- round(RED_NOTICE_2021$Views / 1e6, digits = 2)
 ```
 *Red Notice* received approximately **`{r} VIEWS`** million views in 2021.
