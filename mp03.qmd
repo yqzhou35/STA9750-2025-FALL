@@ -530,7 +530,7 @@ leaflet(data = dist48_boundary) %>%
 ### Proposed Actions
 
 1. Inventory & Prioritization
-- Use NYC Parks tree census data to map all 536 stumps.
+- Use NYC Parks tree census data to map all 488 stumps.
 - Prioritize high-traffic sidewalks and school zones.
 
 2. Stump Removal & Soil Remediation
