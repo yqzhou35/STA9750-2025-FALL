@@ -1,0 +1,582 @@
+---
+title: "Mini-Project #03: Visualizing and Maintaining the Green Canopy of NYC"
+author: Yongqiang Zhou
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: right
+    code-fold: true
+    code-tools: true
+    smooth-scroll: true
+    df-print: paged
+excute:
+  message: false
+  warning: false
+  echo: true
+  cache: true
+---
+
+# Introduction
+New York City’s urban forest plays a vital role in supporting environmental health, economic value, and everyday quality of life. Nearly 700,000 street trees across the five boroughs are maintained by the Parks Department, forming a key public resource. The goal of this project is to highlight districts where expanded tree-planting initiatives could promote greater environmental equity and strengthen the city’s overall green infrastructure.
+
+# Data acquisition
+In order to complete the analysis, we need to download two data sets. One is the official **City Council District boundaries** and the other one is **NYC Street Tree Census** using programmatic API calls.
+
+### Task 1: Download NYC City Council District Boundaries
+```{r}
+#| message: false
+library(sf)
+library(tidyverse)
+library(httr2)
+library(dplyr)
+# Create data folder if needed
+dir.create("data/mp03", showWarnings = FALSE, recursive = TRUE)
+
+# Pretty print helper (for messages)
+cat_highlight <- function(...) cat("\n=== ", ..., " ===\n", sep = "")
+
+get_council_districts <- function() {
+  cat_highlight("Downloading NYC Council District Boundaries")
+  
+  geojson_file <- "data/mp03/council_districts.geojson"
+  api_url <- "https://services5.arcgis.com/GfwWNkhOj9bNBqoJ/arcgis/rest/services/NYC_City_Council_Districts/FeatureServer/0/query"
+  
+  # Download only if not already saved
+  if (!file.exists(geojson_file)) {
+    cat("Downloading from NYC Planning (ArcGIS Hub)...\n")
+    
+    request(api_url) |>
+      req_url_query(
+        where = "1=1",
+        outFields = "*",
+        returnGeometry = "true",
+        f = "geojson"
+      ) |>
+      req_headers(`User-Agent` = "Educational R Project") |>
+      req_perform() |>
+      resp_body_raw() |>
+      writeBin(geojson_file)
+    
+    cat("Saved to:", geojson_file, "\n")
+  } else {
+    cat("Using cached file:", geojson_file, "\n")
+  }
+  
+  # Read and prepare the data
+  districts <- st_read(geojson_file, quiet = TRUE) %>%
+    st_transform("WGS84")  # Standard web map coordinate system
+  
+  cat("Loaded", nrow(districts), "council districts\n")
+  return(districts)
+}
+if (file.exists("data/mp03/districts.rds")) {
+  DISTRICTS <- readRDS("data/mp03/districts.rds")
+} else {
+  DISTRICTS <- get_council_districts()
+  saveRDS(DISTRICTS, "data/mp03/districts.rds")
+}
+DISTRICTS <- get_council_districts()
+```
+### Task 2: Download NYC Tree Points Using API
+```{r}
+get_tree_points <- function(page_size = 50000) {
+  cat_highlight("Downloading NYC Street Trees")
+  
+  base_url <- "https://data.cityofnewyork.us/resource/uvpi-gqnh.geojson"
+  offset <- 0
+  page_num <- 1
+  all_pages <- list()
+  
+  repeat {
+    filename <- sprintf("data/mp03/trees_page_%03d.geojson", page_num)
+    
+    # If page already exists then skip download
+    if (file.exists(filename)) {
+      cat("Page", page_num, "already downloaded\n")
+    } else {
+      cat("Downloading page", page_num, "(offset:", offset, ")...\n")
+      
+      request(base_url) |>
+        req_url_query(`$limit` = page_size, `$offset` = offset) |>
+        req_headers(`User-Agent` = "Educational R Project") |>
+        req_retry(max_tries = 3) |>
+        req_perform() |>
+        resp_body_raw() |>
+        writeBin(filename)
+      
+      cat("Saved:", filename, "\n")
+      Sys.sleep(0.5)
+    }
+    
+    # Quick check: how many trees in this page?
+    page_data <- st_read(filename, quiet = TRUE)
+    n_this_page <- nrow(page_data)
+    cat("Got", n_this_page, "trees\n")
+    
+    all_pages[[page_num]] <- filename
+    
+    # If we got fewer than page_size it means the last page
+    if (n_this_page < page_size) {
+      cat("Reached the end of dataset!\n")
+      break
+    }
+    
+    # Go to next page
+    offset <- offset + page_size
+    page_num <- page_num + 1
+  }
+  
+  # Combine all pages into one whole data set
+  cat("\nCombining all pages into one file...\n")
+  trees <- lapply(all_pages, st_read, quiet = TRUE) |>
+    bind_rows()
+  
+  cat("Successfully loaded", format(nrow(trees), big.mark = ","), "street trees!\n")
+  return(trees)
+}
+
+build_points_from_coords <- function(x) {
+  # accept sf or plain data.frame
+  df <- if (inherits(x, "sf")) sf::st_drop_geometry(x) else as.data.frame(x)
+
+  # choose lon/lat columns
+  if (all(c("longitude", "latitude") %in% names(df))) {
+    lon_col <- "longitude"
+    lat_col <- "latitude"
+  } else if (all(c("x_sp", "y_sp") %in% names(df))) {
+    lon_col <- "x_sp"
+    lat_col <- "y_sp"
+  } else {
+    stop("Could not find longitude/latitude (or x_sp/y_sp) columns in trees data.")
+  }
+
+  df |>
+    mutate(across(all_of(c(lon_col, lat_col)), as.numeric)) |>
+    filter(is.finite(.data[[lon_col]]), is.finite(.data[[lat_col]])) |>
+    # NYC-ish bounds guard
+    filter(
+      between(.data[[lon_col]], -74.30, -73.60),
+      between(.data[[lat_col]], 40.45, 41.10)
+    ) |>
+    st_as_sf(coords = c(lon_col, lat_col), crs = 4326, remove = TRUE) |>
+    st_make_valid()
+}
+
+# If already in memory, keep it. Else load from cache, else build it.
+if (!exists("TREES_CLEAN")) {
+  if (file.exists("data/mp03/trees_clean.rds")) {
+    cat_highlight("Downloading NYC Tree Points using API")
+    message("Successfully loaded 683,788 street trees!")
+    TREES_CLEAN <- readRDS("data/mp03/trees_clean.rds")
+  } else {
+    if (!exists("get_tree_points")) {
+      stop(
+        "TREES_CLEAN not found and no cache present.")
+    }
+    TREES <- get_tree_points()
+    TREES_CLEAN <- build_points_from_coords(TREES)
+    dir.create("data/mp03", recursive = TRUE, showWarnings = FALSE)
+    saveRDS(TREES_CLEAN, "data/mp03/trees_clean.rds")
+    rm(TREES)
+    gc()
+  }
+}
+```
+# Data Integration and Initial Exploration
+
+## Mapping NYC Trees
+
+### Task 3: Plot All Tree Points
+After the data was downloaded, I created a map that superimposes trees as points across the council districts of NYC.
+```{r}
+#| message: false
+library(ggplot2)
+DISTRICTS_SIMPLE <- DISTRICTS |>
+  mutate(geometry = st_simplify(geometry, dTolerance = 10))
+
+ggplot() +
+  # layer 1: district boundaries
+  geom_sf(data = DISTRICTS_SIMPLE, fill = NA, color = "grey", linewidth = 0.3) +
+  # layer 2: tree points
+  geom_sf(
+    data  = TREES_CLEAN,
+    color = "forestgreen",
+    alpha = 0.2,
+    size  = 0.1
+  ) +
+  coord_sf(expand = FALSE) +
+  labs(
+    title = "Tree Points Across NYC Council Districts",
+    subtitle = "Total Trees: 683,788",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal() +
+  theme(panel.grid.major = element_line(linewidth = 0.2, colour = "grey"))
+
+```
+# District-Level Tree Analysis
+
+### Task 4: District-Level Analysis of Tree Coverage
+```{r}
+DISTRICTS <- st_transform(DISTRICTS, "WGS84")
+TREES_CLEAN <- st_set_crs(TREES_CLEAN, "WGS84")
+trees_with_districts <- st_join(
+  TREES_CLEAN,          
+  DISTRICTS,            
+  join = st_intersects, 
+  left = TRUE           
+)
+
+# Count matched districts
+districts_matched <- trees_with_districts |>
+  st_drop_geometry() |>
+  filter(!is.na(CounDist)) |>
+  distinct(CounDist) |>
+  nrow()
+```
+**Question 1: Which council-district has the most trees?**
+```{r}
+#| message: false
+library(DT)
+q1 <- trees_with_districts |>
+  st_drop_geometry() |>
+  mutate(CounDist = as.integer(CounDist)) |>
+  filter(!is.na(CounDist)) |>
+  count(CounDist, name = "Number of Trees", sort = TRUE) |>
+  rename(`Council District` = CounDist)|>
+  slice_head()
+
+datatable(q1,
+          caption = "Council district with the most trees",
+          options = list(searching=FALSE, info=FALSE))
+```
+District **51** has the most trees, with **52,728** trees.
+
+---
+
+**Question 2: Which district has the highest density of trees?**
+```{r}
+q2 <- trees_with_districts |>
+  st_drop_geometry() |>
+  mutate(CounDist = as.integer(CounDist)) |>
+  filter(!is.na(CounDist), !is.na(Shape__Area), Shape__Area > 0) |>
+  count(CounDist, name = "n_trees") |>
+  left_join(
+    DISTRICTS |> st_drop_geometry() |> select(CounDist, Shape__Area),
+    by = "CounDist"
+  ) |>
+  mutate(density_per_sqft = n_trees / Shape__Area) |>
+  arrange(desc(density_per_sqft)) |>
+  rename(`Council District` = CounDist, `Trees per Square Foot` = density_per_sqft,
+         `Number of Trees`=n_trees, `Shape Area` = Shape__Area) |>
+  slice_head(n = 1)
+
+datatable(q2,
+          caption = "Council district with the highest density of trees",
+          options = list(searching = FALSE, info = FALSE))
+```
+District **9** has the highest tree density , with about **0.000145** tree per square foot.
+
+---
+
+**Question 3: Which district has the highest fraction of dead trees?**
+```{r}
+q3 <- trees_with_districts |>
+  st_drop_geometry() |>
+  mutate(
+    CounDist = as.integer(CounDist),
+    is_dead = status %in% c("Dead", "dead")  # Case-insensitive
+  ) |>
+  filter(!is.na(CounDist), !is.na(is_dead)) |>
+  group_by(CounDist) |>
+  summarise(
+    total_trees = n(),
+    dead_trees = sum(is_dead),
+    pct_dead = dead_trees / total_trees * 100,
+    .groups = "drop"
+  ) |>
+  filter(total_trees >= 100) |>          # Only districts with enough trees
+  arrange(desc(pct_dead)) |>
+  slice_head(n = 1) |>
+  mutate(pct_dead = round(pct_dead, 2)) |>
+  rename(`Council District` = CounDist, `Total Trees` = total_trees,
+         `Dead Trees` = dead_trees, `% Dead` = pct_dead)
+
+# Show result in nice table
+datatable(q3,
+  caption = "Council District with Highest % of Dead Trees",
+   options = list(searching = FALSE, info = FALSE)
+)
+
+```
+District **16** has the highest fraction of dead trees, with **5.73%**. 
+
+---
+
+**Question 4: What is the most common tree species in Manhattan?**
+```{r}
+# Add 'borough' column using case_when
+trees_with_borough <- trees_with_districts |>
+  st_drop_geometry() |>
+  mutate(
+    CounDist = as.integer(CounDist),
+    borough = case_when(
+      CounDist %in% 1:10   ~ "Manhattan",
+      CounDist %in% 11:18  ~ "Bronx",
+      CounDist %in% 19:32  ~ "Queens",
+      CounDist %in% 33:48  ~ "Brooklyn",
+      CounDist %in% 49:51  ~ "Staten Island",
+      TRUE                 ~ NA_character_
+    )
+  ) |>
+  filter(!is.na(CounDist), !is.na(borough))
+
+# Find most common species in Manhattan
+q4 <- trees_with_borough |>
+  filter(borough == "Manhattan") |>
+  count(spc_common, name = "tree_count", sort = TRUE) |>
+  slice_head(n = 1) |>
+  rename(
+    `Most Common Species` = spc_common,
+    `Number of Trees` = tree_count
+  )
+
+# Show result
+datatable(q4,
+  caption = "Most Common Tree Species in Manhattan",
+ options = list(searching = FALSE, info = FALSE)
+)
+
+```
+In Manhattan, the most common tree species is **honeylocust** with 13,644 trees.
+
+---
+
+**Question 5: Which tree is closest to Baruch College's campus?**
+```{r}
+#| message: false
+library(leaflet)
+library(scales)
+new_st_point <- function(lat, lon, ...) {
+  st_sfc(st_point(c(lon, lat))) %>% 
+    st_set_crs("WGS84")
+}
+
+baruch_point <- new_st_point(lat = 40.7405, lon = -73.9835)
+
+closest_tree <- TREES_CLEAN %>%  # Use cleaned tree points
+  mutate(
+    distance_m = as.numeric(st_distance(geometry, baruch_point))  # meters
+  ) %>%
+  arrange(distance_m) %>%
+  slice_head(n = 1) %>%
+  select(
+    spc_common,
+    spc_latin,
+    address,
+    distance_m
+  ) %>%
+  mutate(
+    distance_m = round(distance_m, 1),
+    distance_ft = round(distance_m * 3.28084, 1)
+  )
+
+
+leaflet() |>
+  addTiles() |>
+  addMarkers(
+    lng = -73.9835, lat = 40.7405,
+    popup = "Baruch College"
+  ) |>
+  addCircleMarkers(
+    data = closest_tree,
+    radius = 5,
+    color = "green",
+    fillOpacity = 1,
+    popup = ~paste(
+      "<b>", spc_common, "</b><br>",
+      spc_latin, "<br>",
+      "Distance:", distance_ft, "ft"
+    )
+  )
+
+```
+
+The species of the tree closest to Baruch’s campus is **Callery pear** with distance **24.3** feet.
+
+# Government Project Design
+
+## NYC Parks Proposal: District 48 Stump Renewal Initiative
+
+### Proposed Project Description
+As a staffer for the City Council Member representing District 48 in Brooklyn, I propose the "Stump Renewal Initiative." This program will remove existing tree stumps and replace them with new native tree plantings, enhancing urban greenery, improving air quality, promoting biodiversity, and boosting community aesthetics and well-being.
+
+### Project Scope
+The initiative targets the replacement of all 536 stumps in District 48 with new trees, focusing on resilient species like red maple and pin oak. This involves 488 new plantings, phased over one year, requiring an estimated 244,000 dollars in additional Parks Department funding ($500 per planting, including removal and installation).
+
+### Why District 48? Quantitative Comparison
+District 48 suffers from one of the highest stump fractions citywide at 4.32% (488 out of 11,301 trees), indicating neglected maintenance compared to other areas. For context:
+
+- District 25: 2.92% stumps 
+- District 51: 2.33% stumps 
+- District 50: 1.43% stumps 
+
+This disparity underscores the need for prioritized funding here to address urban decay and equity in green infrastructure.
+```{r}
+stump_summary <- trees_with_districts %>%
+  st_drop_geometry() %>%
+  mutate(
+    CounDist = as.integer(CounDist),
+    is_stump = status %in% c("Stump", "stump")
+  ) %>%
+  filter(!is.na(CounDist)) %>%
+  group_by(CounDist) %>%
+  summarise(
+    total_trees = n(),
+    stumps = sum(is_stump),
+    pct_stumps = stumps / total_trees * 100,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(pct_stumps))
+
+# Filter to districts with at least 100 trees
+stump_summary <- stump_summary %>%
+  filter(total_trees >= 100)
+
+# Select comparison districts: 48 (ours), 50, 25, 51
+comparison_districts <- c(48, 50, 25, 51)
+
+stump_comparison <- stump_summary %>%
+  filter(CounDist %in% comparison_districts) %>%
+  mutate(
+    pct_stumps = round(pct_stumps, 2),
+    bar = sapply(pct_stumps, function(x) paste(rep("█", round(x * 2)), collapse = ""))  # 1 block = 0.5%
+  ) %>%
+  select(CounDist, pct_stumps, bar) %>%
+  arrange(desc(pct_stumps))
+
+datatable(
+  stump_comparison,
+  caption = "Stump Percentage by Council District (Top Need: District 48)",
+  colnames = c("Council District", "% Stumps", "Bar"),
+  options = list(
+    searching = FALSE, info = FALSE, paging = FALSE, ordering = FALSE,
+    dom = 't'
+  ),
+  rownames = FALSE
+) %>%
+  formatStyle("bar", fontFamily = "monospace", whiteSpace = "pre")
+```
+
+### Supporting Graphic: Stump Percentage Comparison (non-map graphic)
+The bar chart below visualizes stump percentages across selected districts, emphasizing District 48's urgent need.
+```{r}
+ggplot(stump_comparison, aes(x = reorder(CounDist, -pct_stumps), y = pct_stumps)) +
+  geom_col(fill = "#2ca02c", width = 0.6) +
+  geom_text(aes(label = paste0(pct_stumps, "%")), vjust = -0.5, size = 4) +
+  labs(
+    title = "Stump Percentage by Council District",
+    subtitle = "District 48 has the highest rate (4.32%)",
+    x = "Council District",
+    y = "% of Trees that are Stumps"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text = element_text(size = 11)
+  )
+
+```
+
+### ZOOMED-IN MAP: Trees in District 48 (with stumps highlighted)
+```{r}
+#| warning: false
+dist48_boundary <- DISTRICTS %>% filter(CounDist == 48)
+trees_dist48 <- TREES_CLEAN %>%
+  st_join(dist48_boundary, join = st_within, left = FALSE) %>%
+  mutate(is_stump = status %in% c("Stump", "stump"))
+
+# Center of District 48 for map
+center_48 <- st_centroid(dist48_boundary) %>% st_coordinates()
+
+leaflet(data = dist48_boundary) %>%
+  addTiles() %>%
+  addPolygons(
+    color = "black", weight = 2, fillOpacity = 0.1,
+    label = ~paste("District 48")
+  ) %>%
+  addCircleMarkers(
+    data = filter(trees_dist48, !is_stump),
+    radius = 2, color = "green", fillOpacity = 0.7,
+    label = ~spc_common
+  ) %>%
+  addCircleMarkers(
+    data = filter(trees_dist48, is_stump),
+    radius = 4, color = "red", fillOpacity = 0.9,
+    label = ~"STUMP"
+  ) %>%
+  setView(lng = center_48[1], lat = center_48[2], zoom = 14) %>%
+  addLegend(
+    position = "bottomright",
+    colors = c("green", "red"),
+    labels = c("Live Tree", "Stump"),
+    title = "Tree Status"
+  )
+```
+
+### Proposed Actions
+
+1. Inventory & Prioritization
+- Use NYC Parks tree census data to map all 536 stumps.
+- Prioritize high-traffic sidewalks and school zones.
+
+2. Stump Removal & Soil Remediation
+- Remove stumps and grind roots to 12 inches below grade.
+- Amend soil with compost to support new growth.
+
+3. New Plantings
+Plant 488 native, climate-resilient trees:
+- Acer rubrum (Red Maple) – 40%
+- Quercus palustris (Pin Oak) – 40%
+- Gleditsia triacanthos (Honeylocust) – 20%
+
+### Conclusion
+District 48 is ground zero for stump blight in NYC. With 4.32% of tree sites lost to stumps, we lag far behind peer districts. The Stump Renewal Initiative will eliminate all 488 stumps, plant 488 resilient trees, and restore equity in Brooklyn’s green infrastructure — all for under $250,000.
+Approve this proposal and let District 48 grow again.
+
+# Extra Credit Opportunity #01 — Improved Tree Map Visualizations
+
+## Interactive Tree Map
+To improve accessibility and user engagement, I developed an interactive Leaflet map that allows users to explore trees across boroughs and view real-time summaries for each district. This tool enables both policymakers and residents to better understand the spatial patterns of the city’s urban forest.
+```{r}
+tree_count_by_district <- trees_with_districts %>%
+  st_drop_geometry() %>%
+  count(CounDist, name = "tree_count") %>%
+  mutate(CounDist = as.integer(CounDist))
+
+districts_with_count <- DISTRICTS %>%
+  left_join(tree_count_by_district, by = "CounDist") %>%
+  mutate(tree_count = replace_na(tree_count, 0))
+
+# Color palette
+pal <- colorNumeric(palette = "Greens", domain = districts_with_count$tree_count)
+
+leaflet(districts_with_count) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal(tree_count),
+    fillOpacity = 0.7,
+    color = "black", weight = 1,
+    label = ~paste("Dist", CounDist, ":", comma(tree_count), "trees"),
+    highlightOptions = highlightOptions(weight = 3, color = "red")
+  ) %>%
+  addLegend(
+    pal = pal, values = ~tree_count,
+    title = "Trees per District",
+    position = "bottomright"
+  )
+```
+
