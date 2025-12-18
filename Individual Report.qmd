@@ -1,5 +1,5 @@
 ---
-title: "Do Filming Hotspots Cluster Around Transit, Scenic Architecture, or Redeveloped Areas?"
+title: "Point of Interest - Individual report: Do Filming Hotspots Cluster Around Transit, Scenic Architecture, or Redeveloped Areas?"
 subtitle: "Spatial Mechanisms Linking Film Production and Neighborhood Change in New York City"
 author: Yongqiang Zhou
 date: "`r format(Sys.time(), '%B %d, %Y')`"
@@ -350,14 +350,23 @@ ZIP codes in the top level of filming intensity are, on average, substantially c
 
 This supports the hypothesis that logistical efficiency matters: production crews, equipment trucks, and talent movement all benefit from dense transit networks. However, transit access alone is insufficient. Many transit-rich ZIPs (e.g., purely residential outer-borough areas) still exhibit modest filming activity, suggesting additional filters are at work.
 ```{r}
+#| warning: false
 # Visualizations
+library(plotly)
 p1 <- ggplot(zcta_final) +
-  geom_sf(aes(fill = n_permits), color = "white", size = 0.2) +
-  scale_fill_viridis_c(name = "Total Film Permits\n2013–2023", option = "magma", trans = "sqrt") +
+  geom_sf(aes(fill = n_permits,
+              text = paste("ZIP:", zipcode,  # replace 'zipcode' with your actual column name
+                           "<br>Permits:", n_permits)),
+          color = "white", size = 0.2) +
+  scale_fill_viridis_c(name = "Total Film Permits\n2013–2023", 
+                       option = "magma", trans = "sqrt") +
   geom_sf(data = subway, size = 0.4, color = "#00aaff", alpha = 0.6) +
   labs(title = "Film Permits + Subway Stations") +
-  theme_void() + theme(legend.position = "bottom")
-p1
+  theme_void() + 
+  theme(legend.position = "bottom")
+
+# Make it interactive
+ggplotly(p1, tooltip = "text")
 ```
 **Key patterns observed:**
 
@@ -370,6 +379,8 @@ Large outer-borough ZIP codes with sparse subway coverage (e.g., eastern Queens,
 
 **3. Transit access is necessary but not sufficient.**
 While nearly all high-filming ZIPs are transit-rich, the reverse is not true: several residential, transit-accessible ZIPs still show modest filming activity.
+
+This figure strongly supports the hypothesis that logistical accessibility is a foundational requirement for filming hotspots. Film production is labor- and equipment-intensive, making proximity to subway infrastructure a major cost-saving factor. However, because many transit-rich ZIPs do not become filming hotspots, transit access alone cannot explain clustering. This motivates examination of additional filters such as aesthetics and redevelopment.
 
 ```{r}
 # Prepare a ZCTA geometry object
@@ -425,13 +436,6 @@ if (!is.null(zcta_sf)) {
   nyc_like <- unique(c(top10$zipcode, hotspot_zips))
   map_df <- map_df %>% filter(zipcode %in% nyc_like)
  
-hotspot_zips <- c(
-  # Scenic/Historic: DUMBO/Brooklyn Heights, Greenwich Village/West Village/SoHo, Hudson Yards, West Village, East Village
-  "11201", "10011","10012", "10013", "10014", "10001", "10003",
-  # Redeveloped/Gentrifying: Williamsburg, Hell's Kitchen, Meatpacking, Greenpoint, Long Island City
-  "11211", "10036", "10018", "11222", "11101"
-)
-   
   # ----------------------------
   # Map plot (top-10 colored; hotspot outlines)
   # ----------------------------
@@ -486,14 +490,24 @@ Historic areas such as:
 
 This finding aligns with qualitative industry knowledge: historic streetscapes offer visual richness, period flexibility, and cinematic authenticity that newer developments often lack. Importantly, this mechanism is distinct from transit access. Some historic districts are not the most transit-rich locations, yet still attract substantial filming, indicating an aesthetic premium.
 ```{r}
+#| warning: false
+library(scales)  # for percent()
+
 p2 <- ggplot(zcta_final) +
-  geom_sf(aes(fill = pct_change_income), color = "gray80", size = 0.1) +
-  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
-                       midpoint = 0, labels = percent, name = "Δ Median HH Income\n2013–2022") +
+  geom_sf(aes(fill = pct_change_income,
+              text = paste("ZIP:", zipcode,  # replace 'zipcode' with actual ZIP column name
+                           "<br>Δ Income:", percent(pct_change_income, accuracy = 0.1))),
+          color = "gray80", size = 0.1) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                       midpoint = 0, labels = percent, 
+                       name = "Δ Median HH Income\n2013–2023") +
   geom_sf(data = hist_dist, fill = NA, color = "forestgreen", lwd = 1.2) +
   labs(title = "Gentrification + Historic Districts") +
   theme_void()
-p2
+
+# Convert to interactive
+ggplotly(p2, tooltip = "text")
+
 ```
 This map visualizes percentage change in median household income (2013–2023) by ZIP code, overlaid with officially designated historic district boundaries.
 
@@ -502,7 +516,7 @@ This map visualizes percentage change in median household income (2013–2023) b
 **1. Historic districts frequently coincide with above-median income growth.**
 Many historic areas—particularly in Manhattan and brownstone Brooklyn—appear in lighter or warmer colors, indicating income growth at or above the citywide median.
 
-**2.Filming hotspots tend to lie at the intersection of history and growth.**
+**2. Filming hotspots tend to lie at the intersection of history and growth.**
 ZIP codes that are both near historic districts and experiencing income growth are disproportionately represented among high-filming areas.
 
 Historic and scenic architecture contributes meaningfully to filming concentration, but it is not the sole driver. Formal landmark designation captures only part of the aesthetic logic guiding location selection.
@@ -521,14 +535,13 @@ Accessibility, Visual appeal and a degree of safety and institutional stability.
 
 # Hotspot Analysis
 To ground the analysis, I identify the top 10 ZIP codes by filming permits and compare them against a curated list of known scenic, historic, or redeveloped neighborhoods.
+
+**Scenic/Historic**: DUMBO/Brooklyn Heights(11201), Greenwich Village/West Village/SoHo(10011-10013), Hudson Yards(10014), West Village(10001), East Village(10003)
+
+**Redeveloped/Gentrifying**: Williamsburg(11211), Hell's Kitchen(10036), Meatpacking(10018), Greenpoint(11222), Long Island City(11101)
+
 ```{r}
 library(DT)
-hotspot_zips <- c(
-  # Scenic/Historic: DUMBO/Brooklyn Heights, Greenwich Village/West Village/SoHo, Hudson Yards, West Village, East Village
-  "11201", "10011","10012", "10013", "10014", "10001", "10003",
-  # Redeveloped/Gentrifying: Williamsburg, Hell's Kitchen, Meatpacking, Greenpoint, Long Island City
-  "11211", "10036", "10018", "11222", "11101"
-)
 
 top10 <- clean_permits %>%
   filter(!is.na(zipcode), zipcode != "") %>%
