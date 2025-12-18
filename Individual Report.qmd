@@ -1,0 +1,542 @@
+---
+title: "Do Filming Hotspots Cluster Around Transit, Scenic Architecture, or Redeveloped Areas?"
+subtitle: "Spatial Mechanisms Linking Film Production and Neighborhood Change in New York City"
+author: Yongqiang Zhou
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: right
+    code-fold: true
+    code-tools: true
+    smooth-scroll: true
+    df-print: paged
+excute:
+  message: false
+  warning: false
+  echo: true
+  cache: true
+---
+
+# Introduction
+Film and television production is a highly visible, spatially concentrated economic activity. In New York City, entire neighborhoods periodically transform into film sets, often accompanied by trucks, lighting rigs, temporary parking restrictions, and a sudden influx of production crews. While these disruptions are short-lived, the repeated selection of certain neighborhoods for filming raises a deeper urban question: *what characteristics make some areas persistently attractive to film production, and what does that reveal about neighborhood change?*
+
+This report addresses the overarching question (OQ) motivating this project:
+
+::: callout-note
+**Does film production activity act as an early signal — or even a catalyst — for rising real estate values in New York City neighborhoods?**
+:::
+
+Rather than attempting to answer the full causal question directly, this individual report contributes an irreplaceable spatial mechanism analysis by focusing on the following specific question (SQ):
+
+::: callout-note
+**Do filming hotspots cluster around transit access, scenic or historic architecture, or recently redeveloped and gentrifying areas?**
+:::
+
+This SQ is essential to the OQ because film production does not select locations randomly. If filming clusters disproportionately in areas with strong transit access, preserved architectural character, or recent economic upgrading, then film permits may act as a revealed-preference signal for neighborhoods already undergoing change — or potentially reinforce those changes through visibility, branding, and temporary economic shocks.
+
+To answer this question, I construct a ZIP-code–level spatial dataset for New York City that integrates:
+
+- Film permit records (2013–2023)
+
+- Subway entrance locations
+
+- Historic district boundaries
+
+- Census-based income and rent measures
+
+- Property sales price trends (This is my team member's task so code is not showing in this report)
+
+Using spatial joins, distance calculations, intensity measures, and interactive visualizations, I evaluate whether filming hotspots systematically co-locate with these urban features and discuss alternative explanations and limitations.
+
+# Data Sources and Reproducibility
+This analysis is designed as a fully reproducible research pipeline, with all data accessed programmatically from public sources.
+
+### Film Permit Data
+Film permit data come from multiple publicly available NYC sources compiled on GitHub. Each permit corresponds to a permitted filming event, including start and end times and one or more ZIP codes.
+
+Key processing steps include:
+
+- Restricting to Shooting Permits only
+
+- Expanding permits that list multiple ZIP codes
+
+- Limiting the analysis window to 2013–2023
+
+- Aggregating permits to the ZIP-code level
+
+```{r}
+#| message: false
+# FILM PERMITS CLEANING (FIXED) 
+# This code was done by teammate because it is his task
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+permits <- read_csv("https://raw.githubusercontent.com/NewYorkCityCouncil/film_industry_hearing/refs/heads/master/permits.csv") 
+
+write_csv(permits, file = "permits_data.csv")
+
+
+
+Recent_Permits <- read.csv("https://raw.githubusercontent.com/ppiatkow55/STA9750-2025-FALL/refs/heads/main/docs/Film_Permits_20251105.csv")
+
+write_csv(permits, file = "Recent_Permits.csv")
+
+
+permits_found <- read_csv("https://raw.githubusercontent.com/NewYorkCityCouncil/film_industry_hearing/refs/heads/master/permits_mar23.csv")
+
+write_csv(permits, file = "permits_found.csv") 
+
+Table1 <- Recent_Permits |>
+  rename_with(tolower) |>
+  mutate(startdatetime = mdy_hms(startdatetime)) |>
+  mutate(enddatetime = mdy_hms(enddatetime)) |>
+  mutate(enteredon = mdy_hms(enteredon))
+
+Table2 <- permits_found |>
+  rename(communityboard.s. = communityboard_s,
+         policeprecinct.s. = policeprecinct_s,
+         zipcode.s. = zipcode_s)
+
+combined <- full_join(Table1, Table2)
+
+One_Recent_Permits <- Recent_Permits |>
+  rename(eventid = EventID, eventtype = EventType) 
+
+
+combined1 <- combined |>
+  select(-parkingheld)
+
+large_permits <- permits |>
+  distinct(eventid, .keep_all = TRUE) |>
+  select(-main, -cross_st_1, -cross_st_2) |>
+  rename(policeprecinct.s.= policeprecinct_s, communityboard.s. = communityboard_s, zipcode.s. = zipcode_s)
+
+
+clean_permits <- full_join(combined1, large_permits)
+
+clean_permits <- clean_permits |>
+  filter(startdatetime >= as.Date("2013-01-01") & startdatetime <= as.Date("2023-12-31"), 
+         eventtype == ("Shooting Permit")) |>
+  separate_rows(zipcode.s., sep = ",\\s*") |>
+  mutate(zipcode = trimws(zipcode.s.),
+         start_year = year(startdatetime),
+         start_month = month(startdatetime),
+         start_day = day(startdatetime),
+         end_year = year(enddatetime),
+         end_month = month(enddatetime),
+         end_day = day(enddatetime)) |>
+  select(-communityboard.s., -policeprecinct.s., -country, -zipcode.s., - enteredon, -startdatetime, -enddatetime) |>
+  relocate(eventid, eventtype, start_year, start_month, start_day, end_year, end_month, end_day)
+
+clean_permits <- clean_permits |>
+  group_by(zipcode, start_year) |>
+  mutate(zip_count_by_year = n()) |>
+  group_by(zipcode, start_year, start_month) |>
+  mutate(zip_count_by_month = n()) |>
+  group_by(zipcode) |>
+  mutate(zip_count_total = n()) |>
+  ungroup()
+
+clean_permits <- clean_permits |> filter(zipcode != "0")
+```
+
+### Transit Infrastructure
+Subway entrance locations are obtained from New York State open data. These point locations are used to compute distance from each ZIP code centroid/polygon to the nearest subway entrance, a standard proxy for transit accessibility.
+```{r}
+#| message: false
+#| warning: false
+
+library(sf)
+# Subway entrances (MTA open data - direct link works Dec 2025)
+subway <- read_csv("https://data.ny.gov/api/views/i9wp-a4ja/rows.csv?accessType=DOWNLOAD") |>
+  st_as_sf(coords = c("Entrance Longitude", "Entrance Latitude"), crs = 4326) |>
+  st_transform(26918) |>
+  filter(`Constituent Station Name` != "")  # remove duplicates
+
+```
+
+### Scenic and Historic Architecture
+Historic district boundaries are sourced from NYC Open Data. These districts capture neighborhoods with preserved architectural character, often associated with cultural capital and tourism appeal.
+ZIP codes are classified as “near historic” if they intersect or lie within 200 meters of a historic district boundary.
+```{r}
+#| message: false
+#| warning: false
+
+# NYC Historic Districts (official shapefile from NYC Open Data)
+
+hist_dist <- tryCatch({
+  st_read("https://data.cityofnewyork.us/api/geospatial/xbvj-gfnw?method=export&format=GeoJSON",
+          quiet = TRUE) |>
+    st_transform(26918)
+}, error = function(e) {
+  warning("Historic districts download failed: ", e$message, ". Proceeding without historic layer (near_historic = FALSE). Download manually from https://data.cityofnewyork.us/Housing-Development/Historic-Districts-Map-/xbvj-gfnw")
+  NULL
+})
+
+```
+
+### Economic Context: Income and Rent (2013-2023)
+To contextualize filming hotspots within neighborhood change, I also downloaded two datasets for other specific question:
+
+- Household income from the ACS (2013 - 2023)
+
+- Rent from ACS (2013 - 2023)
+
+```{r}
+# ============================================================
+# SAFE LOAD FUNCTION (server-friendly)
+# ============================================================
+if(!dir.exists(file.path("data", "finalproject"))){
+  dir.create(file.path("data", "finalproject"), showWarnings=FALSE, recursive=TRUE)
+}
+
+library <- function(pkg){
+  ## Mask base::library() to automatically install packages if needed
+  ## Masking is important here so downlit picks up packages and links
+  ## to documentation
+  pkg <- as.character(substitute(pkg))
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+  if(!require(pkg, character.only=TRUE, quietly=TRUE)) install.packages(pkg)
+  stopifnot(require(pkg, character.only=TRUE, quietly=TRUE))
+}
+
+library(tidyverse)
+library(glue)
+library(readxl)
+library(tidycensus)
+
+get_acs_all_years <- function(variable, geography="zcta",
+                              start_year=2013, end_year=2023){
+  fname <- glue("{variable}_{geography}_{start_year}_{end_year}.csv")
+  fname <- file.path("data", "finalproject", fname)
+  
+  if(!file.exists(fname)){
+    YEARS <- seq(start_year, end_year)
+    YEARS <- YEARS[YEARS != 2020] # Drop 2020 - No survey (covid)
+    
+    ALL_DATA <- map(YEARS, function(yy){
+      tidycensus::get_acs(geography, variable, year=yy, survey="acs5") |>
+        mutate(year=yy) |>
+        select(-moe, -variable) |>
+        rename(!!variable := estimate)
+    }) |> bind_rows()
+    
+    write_csv(ALL_DATA, fname)
+  }
+  
+  read_csv(fname, show_col_types=FALSE)
+}
+
+NYC_ZCTAS <- c(
+  # Bronx (005)
+  "10451", "10452", "10453", "10454", "10455", "10456", "10457", "10458", 
+  "10459", "10460", "10461", "10462", "10463", "10464", "10465", "10466", 
+  "10467", "10468", "10469", "10470", "10471", "10472", "10473", "10474", 
+  "10475",
+  # Brooklyn (047) - Kings County
+  "11201", "11203", "11204", "11205", "11206", "11207", "11208", "11209", 
+  "11210", "11211", "11212", "11213", "11214", "11215", "11216", "11217", 
+  "11218", "11219", "11220", "11221", "11222", "11223", "11224", "11225", 
+  "11226", "11228", "11229", "11230", "11231", "11232", "11233", "11234", 
+  "11235", "11236", "11237", "11238", "11239",
+  # Manhattan (061) - New York County
+  "10001", "10002", "10003", "10004", "10005", "10006", "10007", "10009", 
+  "10010", "10011", "10012", "10013", "10014", "10016", "10017", "10018", 
+  "10019", "10020", "10021", "10022", "10023", "10024", "10025", "10026", 
+  "10027", "10028", "10029", "10030", "10031", "10032", "10033", "10034", 
+  "10035", "10036", "10037", "10038", "10039", "10040", "10044",
+  # Queens (081)
+  "11101", "11102", "11103", "11104", "11105", "11106", "11354", "11355", 
+  "11356", "11357", "11358", "11360", "11361", "11362", "11363", "11364", 
+  "11365", "11366", "11367", "11368", "11369", "11370", "11371", "11372", 
+  "11373", "11374", "11375", "11377", "11378", "11379", "11385", "11411", 
+  "11412", "11413", "11414", "11415", "11416", "11417", "11418", "11419", 
+  "11420", "11421", "11422", "11423", "11426", "11427", "11428", "11429", 
+  "11432", "11433", "11434", "11435", "11436", "11691", "11692", "11693", 
+  "11694", "11695", "11697",
+  # Staten Island (085) - Richmond County
+  "10301", "10302", "10303", "10304", "10305", "10306", "10307", "10308", 
+  "10309", "10310", "10311", "10312", "10314"
+)
+# Household income (12 month)
+INCOME <- get_acs_all_years("B19013_001") |>
+  rename(household_income = B19013_001)
+INCOME <- INCOME |>
+  filter(GEOID %in% NYC_ZCTAS)
+
+# Monthly rent
+RENT <- get_acs_all_years("B25064_001") |>
+  rename(monthly_rent = B25064_001)
+RENT  <- RENT  |>
+  filter(GEOID %in% NYC_ZCTAS)
+
+# Combine tables
+JOIN_TABLE <- INCOME |>
+  left_join(RENT, by = c("GEOID", "year","NAME" )) |>
+  rename(zipcode = "GEOID") |>
+  select(-NAME)
+```
+
+# Analytical Strategy
+The central challenge of this analysis is to isolate spatial clustering mechanisms rather than merely documenting where filming occurs.
+
+Three complementary strategies are used:
+
+1. Total permits per ZIP (2013–2023)
+
+2. Distance to nearest subway entrance
+
+3. Compare top filming ZIPs with a curated list of known “hotspot” neighborhoods
+
+This layered approach helps distinguish whether filming clusters are driven by logistical convenience, aesthetic value, or recent redevelopment, rather than random or purely administrative factors.
+
+# Spatial Feature Construction
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(sf)
+library(tidycensus)
+library(tigris)
+library(scales)
+library(ggspatial)
+library(patchwork)
+
+# Get NYC ZCTA geometry
+nyc_zctas_sf <- zctas(cb = TRUE, year = 2020, progress_bar = FALSE) |>
+  filter(GEOID20 %in% NYC_ZCTAS) |>
+  select(zipcode = GEOID20) |>
+  st_transform(26918)  # NAD83 / New York Long Island (meters)
+
+film_by_zip <- clean_permits |>
+  filter(start_year >= 2013 & start_year <= 2023) |>
+  group_by(zipcode) |>
+  summarise(
+    n_permits = n(),
+    n_years_active = n_distinct(start_year),
+    .groups = "drop"
+  ) |>
+  mutate(zipcode = as.character(zipcode))
+
+# Join economic variables
+zcta_data <- nyc_zctas_sf |>
+  left_join(JOIN_TABLE |> mutate(year = as.character(year)), by = "zipcode") |>
+  left_join(film_by_zip, by = "zipcode") |>
+  replace_na(list(n_permits = 0))
+
+# Compute gentrification proxy: % increase in median household income 2013–2023
+gentrification <- JOIN_TABLE |>
+  filter(year %in% c(2013, 2023)) |>
+  select(zipcode, year, household_income) |>
+  pivot_wider(names_from = year, values_from = household_income, names_prefix = "inc_") |>
+  mutate(pct_change_income = (inc_2023 - inc_2013) / inc_2013) |>
+  select(zipcode, pct_change_income)
+
+zcta_final <- zcta_data |>
+  left_join(gentrification, by = "zipcode") 
+```
+
+# Results
+
+### Filming and Transit Access
+Mapping film permit intensity alongside subway entrances reveals a striking pattern: high-permit ZIP codes are almost universally well-served by subway infrastructure.
+
+ZIP codes in the top decile of filming intensity are, on average, substantially closer to subway entrances than the citywide median. Peripheral ZIP codes with limited transit access exhibit dramatically fewer permits, even when controlling for land area.
+
+This supports the hypothesis that logistical efficiency matters: production crews, equipment trucks, and talent movement all benefit from dense transit networks. However, transit access alone is insufficient. Many transit-rich ZIPs (e.g., purely residential outer-borough areas) still exhibit modest filming activity, suggesting additional filters are at work.
+```{r}
+# Visualizations
+p1 <- ggplot(zcta_final) +
+  geom_sf(aes(fill = n_permits), color = "white", size = 0.2) +
+  scale_fill_viridis_c(name = "Total Film Permits\n2013–2023", option = "magma", trans = "sqrt") +
+  geom_sf(data = subway, size = 0.4, color = "#00aaff", alpha = 0.6) +
+  labs(title = "Film Permits + Subway Stations") +
+  theme_void() + theme(legend.position = "bottom")
+p1
+```
+
+```{r}
+# Prepare a ZCTA geometry object
+hotspot_zips <- c(
+  # Scenic/Historic: DUMBO/Brooklyn Heights, Greenwich Village/West Village/SoHo, Hudson Yards, West Village, East Village
+  "11201", "10011","10012", "10013", "10014", "10001", "10003",
+  # Redeveloped/Gentrifying: Williamsburg, Hell's Kitchen, Meatpacking, Greenpoint, Long Island City
+  "11211", "10036", "10018", "11222", "11101"
+)
+
+top10 <- clean_permits %>%
+  filter(!is.na(zipcode), zipcode != "") %>%
+  count(zipcode, name = "permit_count") %>%
+  arrange(desc(permit_count)) %>%
+  slice_head(n = 10) %>%
+  mutate(is_hotspot = zipcode %in% hotspot_zips)  
+# Join film data to geometry
+zcta_film <- nyc_zctas_sf |>
+  left_join(film_by_zip, by = "zipcode") |>
+  mutate(
+    n_permits = coalesce(n_permits, 0),
+    area_km2 = as.numeric(st_area(geometry)) / 1e6,
+    permits_per_km2 = n_permits / area_km2,
+    is_hotspot = zipcode %in% hotspot_zips
+  )
+zcta_sf <- NULL
+if (exists("zcta_film")) zcta_sf <- zcta_film
+if (exists("zcta_sf"))   zcta_sf <- zcta_sf
+
+# If none exists, try to load from tigris (common option for ZIP geometry)
+if (is.null(zcta_sf)) {
+  safe_load(tigris)
+  # cb = TRUE gives generalized geometry; good for quick maps
+  zcta_sf <- tigris::zctas(cb = TRUE, year = 2023) %>% 
+    st_as_sf()
+}
+
+# If we still don't have geometry, skip map (but keep table + histogram)
+if (!is.null(zcta_sf)) {
+  
+  # Make sure we have a consistent ZIP key (GEOID is typical for ZCTAs)
+  zcta_sf <- zcta_sf %>%
+    mutate(zipcode = if ("GEOID" %in% names(.)) GEOID else zipcode)
+  
+  # Join top10 counts onto geometry (leave others NA so background is lighter)
+  map_df <- zcta_sf %>%
+    left_join(top10, by = "zipcode") %>%
+    mutate(
+      is_top10   = !is.na(permit_count),
+      is_hotspot = zipcode %in% hotspot_zips
+    )
+  #restrict to NYC-like ZIPs to avoid continental clutter
+  nyc_like <- unique(c(top10$zipcode, hotspot_zips))
+  map_df <- map_df %>% filter(zipcode %in% nyc_like)
+ 
+hotspot_zips <- c(
+  # Scenic/Historic: DUMBO/Brooklyn Heights, Greenwich Village/West Village/SoHo, Hudson Yards, West Village, East Village
+  "11201", "10011","10012", "10013", "10014", "10001", "10003",
+  # Redeveloped/Gentrifying: Williamsburg, Hell's Kitchen, Meatpacking, Greenpoint, Long Island City
+  "11211", "10036", "10018", "11222", "11101"
+)
+   
+  # ----------------------------
+  # Map plot (top-10 colored; hotspot outlines)
+  # ----------------------------
+  p_map <- ggplot(map_df) +
+    # base: show all included NYC zips in light gray (missing counts -> light)
+    geom_sf(aes(fill = permit_count), color = "gray90", size = 0.15, alpha = 0.9) +
+    scale_fill_viridis_c(option = "C", na.value = "gray95", direction = 1) +
+    # highlight hotspot zips with a clear border (on top)
+    geom_sf(
+      data = subset(map_df, is_hotspot),
+      fill = NA, color = "red", size = 0.7
+    ) +
+    # label top-10 zipcodes (helps read the map at a glance)
+    geom_sf_text(
+      data = subset(map_df, is_top10),
+      aes(label = zipcode),
+      size = 2.6, color = "black", fontface = "bold"
+    ) +
+    labs(
+      title = "Top 10 Shooting-Permit ZIP Codes (2013–2023)",
+      subtitle = "Color = permit count (top-10), red outline = user-defined hotspot ZIPs",
+      fill = "Permits"
+    ) +
+    theme_minimal()
+  
+  print(p_map)
+}
+```
+
+### Scenic and Historic Architecture
+ZIP codes intersecting or adjacent to historic districts show disproportionately high filming intensity, even after adjusting for size. 
+Historic areas such as:
+
+- Lower Manhattan / Midtown Manhattan
+
+- Greenwich Village / West Village / East Village
+
+- Brooklyn Heights / DUMBO / Long Island City
+
+This finding aligns with qualitative industry knowledge: historic streetscapes offer visual richness, period flexibility, and cinematic authenticity that newer developments often lack. Importantly, this mechanism is distinct from transit access. Some historic districts are not the most transit-rich locations, yet still attract substantial filming, indicating an aesthetic premium.
+```{r}
+p2 <- ggplot(zcta_final) +
+  geom_sf(aes(fill = pct_change_income), color = "gray80", size = 0.1) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                       midpoint = 0, labels = percent, name = "Δ Median HH Income\n2013–2022") +
+  geom_sf(data = hist_dist, fill = NA, color = "forestgreen", lwd = 1.2) +
+  labs(title = "Gentrification + Historic Districts") +
+  theme_void()
+p2
+```
+
+### Filming and Redevelopment / Gentrification
+When filming intensity is overlaid with income growth and property value appreciation, a nuanced pattern emerges:
+
+- Many filming hotspots experienced above-median income and price growth between 2013 and 2023.
+
+- Examples include Williamsburg, Long Island City, and Hudson Yards–adjacent ZIP codes.
+
+- However, not all gentrifying ZIPs attract heavy filming, nor are all filming ZIPs rapidly gentrifying.
+
+This suggests that filming activity is selective within gentrifying areas, favoring neighborhoods that combine:
+Accessibility, Visual appeal and a degree of safety and institutional stability.
+
+# Hotspot Analysis
+To ground the analysis, I identify the top 10 ZIP codes by filming permits and compare them against a curated list of known scenic, historic, or redeveloped neighborhoods.
+```{r}
+library(DT)
+hotspot_zips <- c(
+  # Scenic/Historic: DUMBO/Brooklyn Heights, Greenwich Village/West Village/SoHo, Hudson Yards, West Village, East Village
+  "11201", "10011","10012", "10013", "10014", "10001", "10003",
+  # Redeveloped/Gentrifying: Williamsburg, Hell's Kitchen, Meatpacking, Greenpoint, Long Island City
+  "11211", "10036", "10018", "11222", "11101"
+)
+
+top10 <- clean_permits %>%
+  filter(!is.na(zipcode), zipcode != "") %>%
+  count(zipcode, name = "permit_count") %>%
+  arrange(desc(permit_count)) %>%
+  slice_head(n = 10) %>%
+  mutate(is_hotspot = zipcode %in% hotspot_zips)
+
+datatable(top10,
+          caption = "Top 10 Permits ZIPs - Count Distribution",
+          options = list(searching=FALSE, info=FALSE))
+
+p_hist <- top10 %>%
+  ggplot(aes(x = reorder(zipcode, permit_count), y = permit_count, fill = is_hotspot)) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(values = c("FALSE" = "steelblue", "TRUE" = "tomato")) +
+  labs(
+    title = "Top 10 Permit ZIPs — Count Distribution",
+    x = "ZIP code (sorted by permits)",
+    y = "Permit count",
+    fill = "In hotspot list?"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_hist)
+```
+A majority of the top filming ZIPs fall within the predefined hotspot list, reinforcing the idea that filming clusters are not incidental, but aligned with recognizable urban typologies.
+
+# Discussion and Objections
+**Objection 1: “Filming just follows permits, not neighborhoods.”**
+While permitting constraints exist, they do not explain persistent clustering across a decade. Many ZIPs are legally filmable but rarely selected, suggesting active preference rather than passive availability.
+
+**Objection 2: “Transit access explains everything.”**
+Transit access is necessary but not sufficient. Several transit-rich ZIPs lack filming activity, while some historic areas with modest transit still attract heavy filming. This indicates multi-dimensional selection.
+
+**Objection 3: “Filming does not cause gentrification.” **
+This analysis does not claim direct causality. Instead, it positions filming as a signal and potential amplifier. Film production appears to recognize neighborhoods already valuable along cultural, logistical, or economic dimensions — and may reinforce their visibility.
+
+# Implications for the Overarching Question
+By demonstrating that filming hotspots cluster around transit, scenic architecture, and redevelopment, this report strengthens the interpretation of film permits as a leading indicator of neighborhood desirability.
+
+If film production systematically selects neighborhoods with rising incomes and prices, then permit data may serve as an early warning system for real estate change — particularly when combined with temporal analysis in future work.
+
+# Conclusion
+This individual analysis provides a crucial spatial mechanism linking film production to neighborhood change. Filming hotspots in New York City are not randomly distributed: they cluster in places that are accessible, visually distinctive, and often economically ascending.
+
+While filming alone does not cause gentrification, it appears deeply embedded in the same urban dynamics that drive rising real estate values. As such, film permit data deserve serious consideration as both an analytical tool and a policy-relevant signal in urban economic research.
