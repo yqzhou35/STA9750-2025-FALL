@@ -21,7 +21,7 @@ excute:
 ---
 
 # Introduction
-Film and television production is a highly visible, spatially concentrated economic activity. In New York City, entire neighborhoods periodically transform into film sets, often accompanied by trucks, lighting rigs, temporary parking restrictions, and a sudden influx of production crews. While these disruptions are short-lived, the repeated selection of certain neighborhoods for filming raises a deeper urban question: *what characteristics make some areas persistently attractive to film production, and what does that reveal about neighborhood change?*
+New York City is one of the most filmed cities in the world, hosting thousands of film and television permits annually across its five boroughs. These filming activities are not randomly distributed in space. Instead, they reflect a complex interaction between urban form, infrastructure accessibility, aesthetic appeal, and recent patterns of redevelopment. Understanding whether filming “hotspots” cluster around specific urban features is important for both scholarly and practical reasons. From an academic perspective, filming permits provide a novel proxy for cultural production and place desirability. From a policy perspective, identifying systematic clustering can inform permitting practices, neighborhood impact mitigation, and long-term urban planning. While these disruptions are short-lived, the repeated selection of certain neighborhoods for filming raises a deeper urban question: *what characteristics make some areas persistently attractive to film production, and what does that reveal about neighborhood change?*
 
 This report addresses the overarching question (OQ) motivating this project:
 
@@ -55,7 +55,7 @@ Using spatial joins, distance calculations, intensity measures, and interactive 
 This analysis is designed as a fully reproducible research pipeline, with all data accessed programmatically from public sources.
 
 ### Film Permit Data
-Film permit data come from multiple publicly available NYC sources compiled on GitHub. Each permit corresponds to a permitted filming event, including start and end times and one or more ZIP codes.
+The core dataset consists of NYC film permit records obtained from the Mayor’s Office of Media and Entertainment (MOME). Film permit data come from multiple publicly available NYC sources compiled on GitHub. Each permit corresponds to a permitted filming event, including start and end times and one or more ZIP codes.
 
 Key processing steps include:
 
@@ -69,8 +69,9 @@ Key processing steps include:
 
 ```{r}
 #| message: false
-# FILM PERMITS CLEANING (FIXED) 
-# This code was done by teammate because it is his task
+# FILM PERMITS CLEANING
+
+# This code was done by teammate Paul because it is his task.
 library(tidyverse)
 library(lubridate)
 library(dplyr)
@@ -144,7 +145,7 @@ clean_permits <- clean_permits |> filter(zipcode != "0")
 ```
 
 ### Transit Infrastructure
-Subway entrance locations are obtained from New York State open data. These point locations are used to compute distance from each ZIP code centroid/polygon to the nearest subway entrance, a standard proxy for transit accessibility.
+Subway entrance locations are obtained from New York State open data. These point locations are used to show the density of subway stations from each ZIP code, also we can use this to see if the filming hotspots with more subway stations.
 ```{r}
 #| message: false
 #| warning: false
@@ -179,11 +180,11 @@ hist_dist <- tryCatch({
 ```
 
 ### Economic Context: Income and Rent (2013-2023)
-To contextualize filming hotspots within neighborhood change, I also downloaded two datasets for other specific question:
+To contextualize filming hotspots within neighborhood change, I also downloaded two datasets for analysis:
 
-- Household income from the ACS (2013 - 2023)
+- NYC Household income from the ACS (2013 - 2023)
 
-- Rent from ACS (2013 - 2023)
+- NYC Rent from ACS (2013 - 2023)
 
 ```{r}
 # ============================================================
@@ -229,7 +230,7 @@ get_acs_all_years <- function(variable, geography="zcta",
   
   read_csv(fname, show_col_types=FALSE)
 }
-
+#Filter for NYC ZIPs
 NYC_ZCTAS <- c(
   # Bronx (005)
   "10451", "10452", "10453", "10454", "10455", "10456", "10457", "10458", 
@@ -287,13 +288,14 @@ Three complementary strategies are used:
 
 1. Total permits per ZIP (2013–2023)
 
-2. Distance to nearest subway entrance
+2. Density of subway stations per ZIP
 
 3. Compare top filming ZIPs with a curated list of known “hotspot” neighborhoods
 
 This layered approach helps distinguish whether filming clusters are driven by logistical convenience, aesthetic value, or recent redevelopment, rather than random or purely administrative factors.
 
 # Spatial Feature Construction
+Initial mapping of film permits reveals visually striking clustering in Manhattan south of 59th Street, as well as secondary clusters in Brooklyn neighborhoods such as DUMBO and Williamsburg and Long Island City. Outer-borough filming exists but is more diffuse. (See figure in results)
 ```{r}
 #| message: false
 #| warning: false
@@ -304,7 +306,7 @@ library(tigris)
 library(scales)
 library(ggspatial)
 library(patchwork)
-
+library(ggplot2)
 # Get NYC ZCTA geometry
 nyc_zctas_sf <- zctas(cb = TRUE, year = 2020, progress_bar = FALSE) |>
   filter(GEOID20 %in% NYC_ZCTAS) |>
@@ -344,7 +346,7 @@ zcta_final <- zcta_data |>
 ### Filming and Transit Access
 Mapping film permit intensity alongside subway entrances reveals a striking pattern: high-permit ZIP codes are almost universally well-served by subway infrastructure.
 
-ZIP codes in the top decile of filming intensity are, on average, substantially closer to subway entrances than the citywide median. Peripheral ZIP codes with limited transit access exhibit dramatically fewer permits, even when controlling for land area.
+ZIP codes in the top level of filming intensity are, on average, substantially closer to subway entrances than the citywide median. Peripheral ZIP codes with limited transit access exhibit dramatically fewer permits, even when controlling for land area.
 
 This supports the hypothesis that logistical efficiency matters: production crews, equipment trucks, and talent movement all benefit from dense transit networks. However, transit access alone is insufficient. Many transit-rich ZIPs (e.g., purely residential outer-borough areas) still exhibit modest filming activity, suggesting additional filters are at work.
 ```{r}
@@ -357,6 +359,17 @@ p1 <- ggplot(zcta_final) +
   theme_void() + theme(legend.position = "bottom")
 p1
 ```
+**Key patterns observed:**
+
+**1. High-filming ZIP codes are tightly aligned with dense subway networks.**
+
+Manhattan south of 59th Street appears as a continuous high-intensity corridor, with especially strong clustering in Midtown, Lower Manhattan, and adjacent Brooklyn neighborhoods. These areas also show the highest concentration of subway entrances.
+
+**2. Peripheral ZIP codes exhibit sharply lower filming intensity.**
+Large outer-borough ZIP codes with sparse subway coverage (e.g., eastern Queens, southern Staten Island) appear light-colored, indicating very few permits despite substantial land area.
+
+**3. Transit access is necessary but not sufficient.**
+While nearly all high-filming ZIPs are transit-rich, the reverse is not true: several residential, transit-accessible ZIPs still show modest filming activity.
 
 ```{r}
 # Prepare a ZCTA geometry object
@@ -394,10 +407,10 @@ if (is.null(zcta_sf)) {
     st_as_sf()
 }
 
-# If we still don't have geometry, skip map (but keep table + histogram)
+# If still don't have geometry, skip map (but keep table + histogram)
 if (!is.null(zcta_sf)) {
   
-  # Make sure we have a consistent ZIP key (GEOID is typical for ZCTAs)
+  # Make sure to have a consistent ZIP key (GEOID is typical for ZCTAs)
   zcta_sf <- zcta_sf %>%
     mutate(zipcode = if ("GEOID" %in% names(.)) GEOID else zipcode)
   
@@ -447,6 +460,19 @@ hotspot_zips <- c(
   print(p_map)
 }
 ```
+**Key patterns observed:**
+
+**1. Substantial overlap between empirical top-10 ZIPs and known hotspots.**
+
+A majority of the top-performing ZIP codes fall within neighborhoods commonly recognized as visually distinctive or recently redeveloped (e.g., SoHo, West Village, Williamsburg, DUMBO).
+
+**2. Clustering is geographically compact rather than dispersed.**
+Top ZIPs are spatially adjacent rather than scattered, forming recognizable filming corridors across Lower Manhattan and inner Brooklyn.
+
+**3. Outliers are limited and interpretable..**
+ZIPs that appear in the top 10 but are not in the curated hotspot list still tend to border or connect directly to hotspot areas, suggesting spatial spillovers.
+
+This figure demonstrates that filming hotspots are not statistical artifacts, but correspond closely to well-known urban typologies. The strong overlap reinforces the idea that filming concentrates in neighborhoods combining accessibility, symbolic capital, and urban amenities. The spatial adjacency of top ZIPs further suggests that filming benefits from contiguous, production-friendly environments rather than isolated locations.
 
 ### Scenic and Historic Architecture
 ZIP codes intersecting or adjacent to historic districts show disproportionately high filming intensity, even after adjusting for size. 
@@ -469,6 +495,17 @@ p2 <- ggplot(zcta_final) +
   theme_void()
 p2
 ```
+This map visualizes percentage change in median household income (2013–2023) by ZIP code, overlaid with officially designated historic district boundaries.
+
+**Key patterns observed**
+
+**1. Historic districts frequently coincide with above-median income growth.**
+Many historic areas—particularly in Manhattan and brownstone Brooklyn—appear in lighter or warmer colors, indicating income growth at or above the citywide median.
+
+**2.Filming hotspots tend to lie at the intersection of history and growth.**
+ZIP codes that are both near historic districts and experiencing income growth are disproportionately represented among high-filming areas.
+
+Historic and scenic architecture contributes meaningfully to filming concentration, but it is not the sole driver. Formal landmark designation captures only part of the aesthetic logic guiding location selection.
 
 ### Filming and Redevelopment / Gentrification
 When filming intensity is overlaid with income growth and property value appreciation, a nuanced pattern emerges:
@@ -500,8 +537,13 @@ top10 <- clean_permits %>%
   slice_head(n = 10) %>%
   mutate(is_hotspot = zipcode %in% hotspot_zips)
 
-datatable(top10,
-          caption = "Top 10 Permits ZIPs - Count Distribution",
+# Format table and make it pretty
+format_titles <- function(df){
+    colnames(df) <- str_replace_all(colnames(df), "_", " ") |> str_to_title()
+    df
+}
+top10 |> format_titles() |>
+      datatable(caption = "Top 10 Permits ZIPs - Count Distribution",
           options = list(searching=FALSE, info=FALSE))
 
 p_hist <- top10 %>%
@@ -519,16 +561,23 @@ p_hist <- top10 %>%
 
 print(p_hist)
 ```
-A majority of the top filming ZIPs fall within the predefined hotspot list, reinforcing the idea that filming clusters are not incidental, but aligned with recognizable urban typologies.
+A majority of the top filming ZIPs fall within the predefined hotspot list, reinforcing the idea that filming clusters are not incidental, but aligned with recognizable urban typologies. Most of the highest-permit ZIPs are colored as “TRUE” for hotspot status, indicating alignment with scenic, historic, or redeveloped neighborhoods.
+
+Permit counts are highly skewed. Even among the top 10, filming intensity varies substantially, reinforcing the idea of extreme concentration.
+
+Non-hotspot ZIPs still show elevated activity. A small number of top ZIPs fall outside the curated list, suggesting either emerging hotspots or logistical spillovers from adjacent areas.
+
 
 # Discussion and Objections
-**Objection 1: “Filming just follows permits, not neighborhoods.”**
+The analysis provides a clear and nuanced answer to the SQ: **Yes, filming hotspots cluster around transit infrastructure, scenic architecture, and recently redeveloped areas, but these factors operate jointly rather than independently.**
+
+*Objection 1: “Filming just follows permits, not neighborhoods.”*
 While permitting constraints exist, they do not explain persistent clustering across a decade. Many ZIPs are legally filmable but rarely selected, suggesting active preference rather than passive availability.
 
-**Objection 2: “Transit access explains everything.”**
+*Objection 2: “Transit access explains everything.”*
 Transit access is necessary but not sufficient. Several transit-rich ZIPs lack filming activity, while some historic areas with modest transit still attract heavy filming. This indicates multi-dimensional selection.
 
-**Objection 3: “Filming does not cause gentrification.” **
+*Objection 3: “Filming does not cause gentrification.” *
 This analysis does not claim direct causality. Instead, it positions filming as a signal and potential amplifier. Film production appears to recognize neighborhoods already valuable along cultural, logistical, or economic dimensions — and may reinforce their visibility.
 
 # Implications for the Overarching Question
