@@ -6,7 +6,6 @@ author:
 - Paul Piatkowski
 - Ethan Tom
 - Santiago Espinoza
-
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 
 format:
@@ -122,7 +121,7 @@ When approaching the question from a logical perspective, this is totally reason
 
 
 
-### Equity and Exclusion in Filming Activity - [View Santiago's individual report here](https://saantiaagoo.github.io/STA9750-2025-FALL/project.html)
+### Equity and Exclusion in Filming Activity - [View Santiago's individual report here](https://saantiaagoo.github.io/STA9750-2025-FALL/filmreport.html)
 
 **QUESTION: Are certain communities systematically left out of filming?**
 
