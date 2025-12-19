@@ -33,7 +33,7 @@ This project examines the relationship between film production activity—measur
 Our overarching question: **Does film production activity act as an early signal — or even a catalyst — for rising real estate values in New York City neighborhoods?** is to determine whether film activity is merely a reflection of neighborhood desirability or whether it provides predictive value for understanding or forecasting shifts in local real estate markets.
 
 # Background and Related Literature
-Prior literature offers several insights into how creative industries intersect with urban change. **NYC’s own Film & TV Economic Impact** reports emphasize the substantial economic contribution of filming activity but provide little systematic evidence regarding its relationship with residential real estate. Studies in the UK, such as Don’t Shoot the Pianist, explore whether artists and creative workers pave the way for gentrification or whether they migrate to areas already in transition. This work suggests that creatives are more likely to precede or accompany early phases of neighborhood revitalization, particularly in large metropolitan areas.
+Prior literature offers several insights into how creative industries intersect with urban change. **NYC’s own Film & TV Economic Impact** reports emphasize the substantial economic contribution of filming activity but provide little systematic evidence regarding its relationship with residential real estate. Studies in the UK, such as **Don’t Shoot the Pianist**, explore whether artists and creative workers pave the way for gentrification or whether they migrate to areas already in transition. This work suggests that creatives are more likely to precede or accompany early phases of neighborhood revitalization, particularly in large metropolitan areas.
 
 Another perspective comes from cultural geography. **Research on site-specific television in Portland**, for example, argues that location-based filming can reshape urban identity, attract tourism, and alter perceptions of neighborhoods—sometimes accelerating redevelopment. This aligns with the idea of filmed locations becoming cultural landmarks, thereby influencing residential desirability.
 
@@ -43,14 +43,13 @@ Our project addresses this gap by evaluating whether the presence of film activi
 
 # Data Sources and Methods
 
-### Film Permit Data
-We used film permit records from the Mayor’s Office of Media and Entertainment, containing over ten years of detailed event data including event types, start and end dates, locations, boroughs, and ZIP codes. 
+### Data Sources
 
-### Annualized Housing Sales Data
-The NYC Department of Finance publishes residential property sales records across all boroughs. From 2013–2023, we extracted ZIP-code-level median annualized sale prices, which serve as our main indicator of residential market behavior.
+- Film Permit Data
 
-### Supplemental Socioeconomic Data
-We incorporated ZIP-level annual income and rent measures from the Bureau of Labor Statistics, enabling us to test the relationship between neighborhood wealth and film activity.
+- Annualized Housing Sales Data
+
+- Supplemental Socioeconomic Data (Income and Rent)
 
 ## Analytical Approach
 Our methodological strategy includes:
@@ -88,7 +87,7 @@ Despite these shifts, filming hotspots are remarkably stable. In most years, 80�
 Film production activity in New York City consistently clusters within neighborhoods that combine scenic appeal, transit accessibility, and recent redevelopment. This pattern is not coincidental. When location teams select filming environments, they prioritize visually compelling streetscapes, distinctive architecture, and areas that feel uniquely “New York.” Scenic neighborhoods like DUMBO, Brooklyn Heights, and the West Village offer historic brownstones, waterfront views, cobblestone streets, and dramatic skyline backdrops. These features are not only aesthetically desirable but also highly recognizable to national and international audiences. As a result, scenic areas become visually coded as cinematic spaces, reinforcing their cultural significance and drawing repeated filming activity.
 
 ![](pic/Subway.png){width="90%" fig-align="center"}
-Transit accessibility is equally important. Filming requires the movement of large crews, heavy equipment, and time-sensitive logistics. Neighborhoods with dense subway coverage—such as Midtown, lower Manhattan, Williamsburg, and Long Island City, reduce transportation costs and provide reliable access for staff and vendors. This reliability makes transit-rich areas natural filming hubs, even if they are not the most scenic. Location managers often balance aesthetic considerations with logistical feasibility, and transit access often tips the scale toward certain ZIP codes over others.
+Transit accessibility is also important. Filming requires the movement of large crews, heavy equipment, and time-sensitive logistics. Neighborhoods with dense subway coverage—such as Midtown, lower Manhattan and Long Island City, reduce transportation costs and provide reliable access for staff and vendors. This reliability makes transit-rich areas natural filming hubs, even if they are not the most scenic. Location managers often balance aesthetic considerations with logistical feasibility, and transit access often tips the scale toward certain ZIP codes over others.
 
 Redeveloped or rapidly gentrifying areas form a third major cluster. Neighborhoods such as **DUMBO/Brooklyn Heights(11201)**, **Long Island City (11101)**, and **Green Points (11222)** have experienced substantial economic investment and cultural transformation over the past decade. These areas offer modern infrastructure, flexible public spaces, and new architectural styles that lend themselves to contemporary storytelling. As these neighborhoods evolve, filming becomes a way of visually documenting and broadcasting their transformation. In many cases, film crews arrive early in the redevelopment cycle, signaling the area’s growing appeal and cultural momentum.
 
@@ -100,11 +99,11 @@ Taken together, these factors form a reinforcing feedback loop: accessible and s
 
 To evaluate whether film production activity provides meaningful insight into housing market changes, my contribution focuses on preparing and analyzing New York City housing data and integrating it with income and rent measures to establish this economic baseline.
 
-I assembled and cleaned New York City annualized property sales data from the Department of Finance covering all five boroughs between 2013 and 2023. The original data consisted of transaction-level records that varied across years in structure and formatting. To better capture neighborhood-level trends while reducing volatility from individual transactions, housing prices were aggregated to the ZIP–year level, producing average and median sale prices for each location over time.
+I cleaned property NYC sales data between 2013 and 2023. The original data consisted of transaction-level records that varied across years in structure and formatting. To better capture neighborhood-level trends while reducing volatility from individual transactions, housing prices were aggregated to the ZIP–year level, producing average and median sale prices for each location over time.
 
 To place housing prices in their broader economic context, I integrated supplemental data from the American Community Survey, including median household income and median monthly rent. All observations were restricted to ZIP codes within New York City and aligned across the same time period to ensure consistency across datasets.
 
-Using this cleaned and integrated dataset, I created visualizations examining the relationship between housing prices and traditional economic indicators. Scatterplots comparing housing prices with income and rent across boroughs revealed clear positive relationships, though with considerable variation across neighborhoods. In some boroughs, higher income or rent levels were associated with higher housing prices, while in others the relationship appeared weaker or more dispersed. These patterns suggest that while economic indicators play an important role, they do not fully explain observed housing price differences across the city.
+Then I created visualizations examining the relationship between housing prices and traditional economic indicators. Scatterplots comparing housing prices with income and rent across boroughs revealed clear positive relationships, though with considerable variation across neighborhoods. In some boroughs, higher income or rent levels were associated with higher housing prices, while in others the relationship appeared weaker or more dispersed. These patterns suggest that while economic indicators play an important role, they do not fully explain observed housing price differences across the city.
 
 To quantify these relationships, I estimated multiple linear regression models using median household income, median rent, and borough indicators as baseline predictors of housing prices. These models provide a benchmark for evaluating predictive performance, showing that traditional economic factors explain a meaningful but incomplete share of housing price variation.
 
@@ -133,7 +132,7 @@ When approaching the question from a logical perspective, this is totally reason
 
 To analyze the question, we linked data on film permits issued across New York City with information about the income levels of neighborhoods. Each ZIP code in the city has a median household income from the U.S. Census, and we used this to understand whether filming happens more often in wealthier or poorer areas.
 
-Our analysis looked at how many filming permits ZIP codes received over a decade and compared that with their income levels. What we found is clear: filming activity is more common in higher-income neighborhoods than in lower-income ones.
+We looked at how many filming permits ZIP codes received over a decade and compared that with their income levels. What we found is clear: filming activity is more common in higher-income neighborhoods than in lower-income ones.
 
 When ZIP codes are grouped into income categories — for example, below $50,000 in yearly household income, $50–75k, $75–100k, and so on — the data show a pattern. All income groups have at least some filming activity, but the average number of filming permits per year is substantially higher in wealthier ZIP codes. Lower-income ZIP codes tend to receive fewer permits overall. This pattern holds citywide. Statistical tests also confirm that the relationship between income and filming intensity is meaningful. A correlation test shows a positive and statistically significant connection between a ZIP code’s median income and how frequently filming permits are issued there. This means that, on average, as neighborhood income goes up, the amount of filming in that area also goes up.
 
@@ -148,7 +147,6 @@ Importantly, filming patterns reveal persistent inequalities, with lower-income 
 
 For policymakers, filming data may serve as a valuable contextual indicator for anticipating neighborhood change. Incentives aimed at expanding filming into underrepresented areas could promote more equitable distribution of cultural and economic benefits. Future research should apply causal methods to better disentangle whether filming ever accelerates change or merely signals it.
 
-Ultimately, New York City’s film industry amplifies the city’s global image—but without thoughtful policy, it may also reinforce inequality. Harnessed strategically, cultural production can become a tool for more inclusive urban revitalization.
 
 # References
 1. Film Permit Data
