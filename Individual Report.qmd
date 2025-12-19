@@ -871,7 +871,7 @@ Accessibility, Visual appeal and a degree of safety and institutional stability.
 # Hotspot Analysis
 To ground the analysis, I identify the top 10 ZIP codes by filming permits and compare them against a curated list of known scenic, historic, or redeveloped neighborhoods.
 
-**Scenic/Historic**: DUMBO/Brooklyn Heights(11201), Greenwich Village/West Village/SoHo(10011-10013), Hudson Yards(10014), West Village(10001), East Village(10003)
+**Scenic/Historic**: DUMBO/Brooklyn Heights(11201), Greenwich Village/West Village/SoHo(10011-10013), Hudson Yards(10001), West Village(10014), East Village(10003)
 
 **Redeveloped/Gentrifying**: Williamsburg(11211), Hell's Kitchen(10036), Meatpacking(10018), Greenpoint(11222), Long Island City(11101)
 
